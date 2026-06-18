@@ -21,27 +21,26 @@ The source files in this repo are for transparency and review. To run the progra
 
 ### Basic usage — auto-detect by game name
 
-Type the game name into the **Game Name** field, leave **Address** blank, set a **Duration** (or leave it blank for the default of 900 seconds / 15 min), and click **Launch**. The program queries the Steam API to find the game's install path automatically.
+Type the game name into the **Game Name** field, leave **Address** blank, set a **Duration** (or leave it blank for the default of 15 min), and click **Launch**. The program queries the Steam API to find the game's install path automatically.
 
-> Math expressions work in the Duration field — e.g. `15*60` for 15 minutes, or `(3*60)+20` for 3 minutes and 20 seconds.
+> Math expressions work in the Duration field — e.g. `15*2` for 30 minutes, or `7.5` for 7 minutes and 30 seconds.
 
 ### Manual address — when auto-detect gets it wrong
 
 In some cases the path returned by the Steam API points to a launcher rather than the actual game executable. If Discord isn't picking up the quest progress, you'll need to find the correct path manually — the [r/DiscordQuests](https://www.reddit.com/r/DiscordQuests/) subreddit or SteamDB depot pages are good sources for this.
 
-Once you have the correct path, paste it into the **Address** field as a path relative to `steamapps\common`, for example:
+Once you have the correct path, paste it into the **Address** field. Two formats are accepted:
 
-```
-Valorant\VALORANT.exe
-```
+- **Relative** (inside `steamapps\common`): `Valorant\VALORANT.exe`
+- **Full absolute path**: `C:\Riot Games\VALORANT\live\VALORANT.exe`
 
-You can also use the **Browse** button to navigate to the file directly — it starts inside `steamapps\common` automatically.
+You can also use the **Browse** button to navigate to the file directly. If the file is inside `steamapps\common` it will be stored as a relative path automatically; otherwise the full path is used.
 
 When an address is provided, the Game Name field is ignored.
 
 ### Non-Steam games
 
-For games not on Steam, auto-detection will not work. Use the **Address** field with the full relative path as described above.
+For games not on Steam (Riot, Epic, Battle.net, etc.), auto-detection will not work. Use the **Address** field with the full absolute path to the game's executable. The tool will create a fake executable at that exact location, run it for the specified duration, then restore everything automatically — no installation required.
 
 ### Note
 

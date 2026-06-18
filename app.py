@@ -2,7 +2,7 @@ import customtkinter as ctk
 from tkinter import filedialog
 from pathlib import Path
 from steam_api import COMMON_FOLDER, get_game_path_by_name
-import shutil, os, subprocess, threading, sys, ast, time
+import shutil, os, subprocess, threading, sys, ast, time, webbrowser
 
 
 def resource_path(relative):
@@ -11,10 +11,10 @@ def resource_path(relative):
     return os.path.join(os.path.abspath('.'), relative)
 
 
-def safe_eval_seconds(expr):
+def safe_eval_minutes(expr):
     expr = expr.strip()
     if not expr:
-        return 900
+        return 15.0
     try:
         tree = ast.parse(expr, mode='eval')
         allowed = (
@@ -25,7 +25,7 @@ def safe_eval_seconds(expr):
         for node in ast.walk(tree):
             if not isinstance(node, allowed):
                 raise ValueError("Only numeric expressions are allowed")
-        result = int(eval(compile(tree, '<string>', 'eval')))
+        result = float(eval(compile(tree, '<string>', 'eval')))
         if result <= 0:
             raise ValueError("Duration must be greater than 0")
         return result
@@ -35,11 +35,15 @@ def safe_eval_seconds(expr):
         raise ValueError(f"Invalid expression: {e}")
 
 
-def sanitize_addr(addr):
+def resolve_addr(addr):
+    addr = addr.strip()
+    p = Path(addr)
+    if p.is_absolute():
+        return str(p)
     base = Path(COMMON_FOLDER).resolve()
     target = (base / addr).resolve()
     if not str(target).startswith(str(base)):
-        raise ValueError("Address must be relative to steamapps\\common")
+        raise ValueError("Relative address must stay inside steamapps\\common")
     return str(target)
 
 
@@ -75,7 +79,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         self.title("Discord Quest Completer")
-        self.geometry("520x590")
+        self.geometry("560x560")
         self.resizable(False, False)
 
         self._active_thread = None
@@ -86,98 +90,114 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
-        info = ctk.CTkFrame(self, fg_color="transparent")
-        info.pack(fill="x", padx=24, pady=(20, 0))
+        # ── Header ────────────────────────────────────────────────────
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.pack(fill="x", padx=24, pady=(20, 0))
 
-        ctk.CTkLabel(info, text="How it works",
-                     font=ctk.CTkFont(size=14, weight="bold")).pack(anchor="w")
         ctk.CTkLabel(
-            info,
-            text=(
-                "1. Enter the Game Name to auto-detect via Steam, or fill in\n"
-                "   Address manually (relative path inside steamapps\\common).\n"
-                "2. Set the Duration in seconds. Math like 15*60 is supported;\n"
-                "   leave blank for the default of 900 s (15 min).\n"
-                "3. Click Launch — the real game .exe is temporarily swapped for\n"
-                "   a harmless fake, then fully restored when the timer ends."
-            ),
-            justify="left",
-            text_color="gray70",
-            font=ctk.CTkFont(size=12),
-        ).pack(anchor="w", pady=(4, 0))
+            header, text="Discord Quest Completer",
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            header,
+            text="Simulate running a game to complete Discord quests — no download needed.",
+            text_color="gray55", font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", pady=(3, 0))
 
-        ctk.CTkFrame(self, height=1, fg_color="gray30").pack(fill="x", padx=24, pady=14)
+        # ── Input card ────────────────────────────────────────────────
+        card = ctk.CTkFrame(self, corner_radius=12)
+        card.pack(fill="x", padx=20, pady=(16, 0))
 
-        fields = ctk.CTkFrame(self, fg_color="transparent")
-        fields.pack(fill="x", padx=24)
-        fields.columnconfigure(1, weight=1)
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(fill="x", padx=18, pady=18)
+        inner.columnconfigure(0, weight=1)
 
-        row = 0
+        # Game Name
+        ctk.CTkLabel(inner, text="Game Name",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     anchor="w").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
 
-        ctk.CTkLabel(fields, text="Game Name",
-                     font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
-        row += 1
         self.name_entry = ctk.CTkEntry(
-            fields, placeholder_text="e.g. Valorant", font=ctk.CTkFont(size=13))
-        self.name_entry.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(0, 3))
-        row += 1
-        ctk.CTkLabel(fields, text="Used to find the game automatically when Address is blank.",
-                     text_color="gray55", font=ctk.CTkFont(size=11)).grid(
-            row=row, column=0, columnspan=3, sticky="w", pady=(0, 12))
-        row += 1
+            inner, placeholder_text="e.g. Valorant",
+            height=36, font=ctk.CTkFont(size=13))
+        self.name_entry.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
-        ctk.CTkLabel(fields, text="Address  (optional)",
-                     font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
-        row += 1
+        ctk.CTkLabel(inner, text="Auto-detected via Steam when Address is left blank.",
+                     text_color="gray55", font=ctk.CTkFont(size=11),
+                     anchor="w").grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 14))
+
+        # Address
+        ctk.CTkLabel(inner, text="Address  (optional)",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     anchor="w").grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        addr_row = ctk.CTkFrame(inner, fg_color="transparent")
+        addr_row.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        addr_row.columnconfigure(0, weight=1)
+
         self.addr_entry = ctk.CTkEntry(
-            fields, placeholder_text=r"e.g. Valorant\VALORANT.exe",
-            font=ctk.CTkFont(size=13))
-        self.addr_entry.grid(row=row, column=0, columnspan=2, sticky="ew",
-                             padx=(0, 8), pady=(0, 3))
-        ctk.CTkButton(fields, text="Browse", width=72, height=30,
-                      command=self._browse).grid(row=row, column=2, pady=(0, 3))
-        row += 1
-        ctk.CTkLabel(fields, text="Relative path inside steamapps\\common.",
-                     text_color="gray55", font=ctk.CTkFont(size=11)).grid(
-            row=row, column=0, columnspan=3, sticky="w", pady=(0, 12))
-        row += 1
+            addr_row,
+            placeholder_text=r"Relative (e.g. Valorant\VALORANT.exe) or full path (C:\...)",
+            height=36, font=ctk.CTkFont(size=13))
+        self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
-        ctk.CTkLabel(fields, text="Duration (seconds)",
-                     font=ctk.CTkFont(weight="bold")).grid(
-            row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
-        row += 1
+        ctk.CTkButton(addr_row, text="Browse", width=80, height=36,
+                      command=self._browse).grid(row=0, column=1)
+
+        ctk.CTkLabel(inner,
+                     text="Relative to steamapps\\common, or paste any full absolute path.",
+                     text_color="gray55", font=ctk.CTkFont(size=11),
+                     anchor="w").grid(row=5, column=0, columnspan=2, sticky="w", pady=(0, 2))
+
+        reddit_link = ctk.CTkLabel(
+            inner,
+            text="Not sure of the path? Find it on r/DiscordQuests ↗",
+            text_color="#4A9EFF", font=ctk.CTkFont(size=11),
+            cursor="hand2", anchor="w")
+        reddit_link.grid(row=6, column=0, columnspan=2, sticky="w", pady=(0, 14))
+        reddit_link.bind("<Button-1>",
+                         lambda e: webbrowser.open("https://www.reddit.com/r/DiscordQuests/"))
+
+        # Duration
+        ctk.CTkLabel(inner, text="Duration (minutes)",
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     anchor="w").grid(row=7, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
         self.time_entry = ctk.CTkEntry(
-            fields, placeholder_text="e.g. 900  or  15*60",
-            font=ctk.CTkFont(size=13))
-        self.time_entry.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(0, 3))
-        row += 1
-        ctk.CTkLabel(fields, text="Default: 900 s (15 min). Math expressions are supported.",
-                     text_color="gray55", font=ctk.CTkFont(size=11)).grid(
-            row=row, column=0, columnspan=3, sticky="w")
+            inner, placeholder_text="e.g.  15  or  15*2",
+            height=36, font=ctk.CTkFont(size=13))
+        self.time_entry.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 4))
 
+        ctk.CTkLabel(inner,
+                     text="Default: 15 min. Math expressions like 15*2 are supported.",
+                     text_color="gray55", font=ctk.CTkFont(size=11),
+                     anchor="w").grid(row=9, column=0, columnspan=2, sticky="w")
+
+        # ── Error label ───────────────────────────────────────────────
         self.error_label = ctk.CTkLabel(
             self, text="", text_color="#FF6B6B",
-            font=ctk.CTkFont(size=12), wraplength=460)
-        self.error_label.pack(pady=(10, 0))
+            font=ctk.CTkFont(size=12), wraplength=500)
+        self.error_label.pack(pady=(12, 0))
 
+        # ── Launch button ─────────────────────────────────────────────
         self.launch_btn = ctk.CTkButton(
-            self, text="Launch", width=160, height=40,
-            font=ctk.CTkFont(size=14, weight="bold"),
+            self, text="Launch", width=180, height=44,
+            font=ctk.CTkFont(size=15, weight="bold"),
             command=self.launch)
-        self.launch_btn.pack(pady=(8, 0))
+        self.launch_btn.pack(pady=(6, 0))
 
+        # ── Status + progress ─────────────────────────────────────────
         bottom = ctk.CTkFrame(self, fg_color="transparent")
-        bottom.pack(fill="x", padx=24, pady=(14, 20))
+        bottom.pack(fill="x", padx=20, pady=(14, 20))
 
         self.status_label = ctk.CTkLabel(
-            bottom, text="Ready.", text_color="gray60", font=ctk.CTkFont(size=12))
-        self.status_label.pack()
+            bottom, text="Ready.",
+            text_color="gray55", font=ctk.CTkFont(size=12), anchor="w")
+        self.status_label.pack(fill="x")
 
-        self.progress_bar = ctk.CTkProgressBar(bottom, width=460)
+        self.progress_bar = ctk.CTkProgressBar(bottom, height=14, corner_radius=6)
         self.progress_bar.set(0)
-        self.progress_bar.pack(pady=(6, 0))
+        self.progress_bar.pack(fill="x", pady=(6, 0))
 
     def _browse(self):
         base = Path(COMMON_FOLDER)
@@ -194,24 +214,27 @@ class App(ctk.CTk):
             rel = Path(path).relative_to(Path(COMMON_FOLDER))
             self.addr_entry.delete(0, "end")
             self.addr_entry.insert(0, str(rel))
-            self._set_error("")
         except ValueError:
-            self._set_error("Selected file is not inside steamapps\\common.")
+            self.addr_entry.delete(0, "end")
+            self.addr_entry.insert(0, path)
+        self._set_error("")
 
     def launch(self):
         name = self.name_entry.get().strip()
         addr = self.addr_entry.get().strip()
-        time_expr = self.time_entry.get().strip() or "900"
+        time_expr = self.time_entry.get().strip() or "15"
 
         if not name and not addr:
             self._set_error("Enter a Game Name or an Address.")
             return
 
         try:
-            duration_s = safe_eval_seconds(time_expr)
+            duration_min = safe_eval_minutes(time_expr)
         except ValueError as e:
             self._set_error(str(e))
             return
+
+        duration_s = int(duration_min * 60) + 20
 
         self._set_error("")
         self.launch_btn.configure(state="disabled", text="Running...")
@@ -230,7 +253,7 @@ class App(ctk.CTk):
         try:
             if addr:
                 try:
-                    found_addr = sanitize_addr(addr)
+                    found_addr = resolve_addr(addr)
                 except ValueError as e:
                     self.after(0, lambda: self._finish_error(str(e)))
                     return
