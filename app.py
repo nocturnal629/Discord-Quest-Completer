@@ -3,6 +3,8 @@ from tkinter import filedialog
 from pathlib import Path
 import shutil, os, subprocess, threading, sys, ast, time, webbrowser
 
+from steam_api import search_steam_game
+
 COMMON_FOLDER = r'C:\Program Files (x86)\Steam\steamapps\common'
 
 
@@ -40,16 +42,13 @@ def resolve_addr(addr):
     addr = addr.strip()
     p = Path(addr)
 
-    # C:\... or D:\... → use as-is
     if p.is_absolute():
         return str(p)
 
-    # \Steam\... or \Games\... → root-relative, prepend system drive
     if addr.startswith(('\\', '/')):
         drive = os.environ.get('SystemDrive', 'C:')
         return str(Path(drive + '\\' + addr.lstrip('/\\')))
 
-    # Relative path (including ..\) → resolve from steamapps\common
     base = Path(COMMON_FOLDER).resolve()
     return str((base / addr).resolve())
 
@@ -86,44 +85,51 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("Discord Quest Completer")
-        self.geometry("520x520")
+        self.geometry("520x580")
         self.resizable(False, False)
-        
-        # Set window background color
         self.configure(fg_color="#0e1015")
 
         self._active_thread = None
         self._start_time = None
         self._duration_ms = None
         self._is_running = False
+        self._is_searching = False
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _build_ui(self):
-        # Main container with gradient-like background
         main_container = ctk.CTkFrame(self, fg_color="#0e1015", corner_radius=0)
         main_container.pack(fill="both", expand=True, padx=0, pady=0)
-        
+
+        # ── Launch button ─── packed first so it always reserves bottom space
+        button_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        button_frame.pack(side="bottom", fill="x", pady=(0, 25))
+
+        self.launch_btn = ctk.CTkButton(
+            button_frame,
+            text="Start Quest",
+            width=460,
+            height=52,
+            font=ctk.CTkFont(size=17, weight="bold"),
+            fg_color="#5865F2",
+            hover_color="#4752c4",
+            corner_radius=12,
+            command=self.launch
+        )
+        self.launch_btn.pack()
+
         # ── Header ────────────────────────────────
         header_frame = ctk.CTkFrame(main_container, fg_color="transparent")
         header_frame.pack(fill="x", padx=30, pady=(20, 0))
-        
-        title_label = ctk.CTkLabel(
+
+        ctk.CTkLabel(
             header_frame, text="Discord Quest Completer",
             font=ctk.CTkFont(size=24, weight="bold"),
             text_color="#ffffff"
-        )
-        title_label.pack(anchor="w")
-        
-        subtitle_label = ctk.CTkLabel(
-            header_frame,
-            text="Complete quests without downloading games",
-            text_color="#8b8d94", font=ctk.CTkFont(size=13),
-        )
-        subtitle_label.pack(anchor="w", pady=(4, 0))
+        ).pack(anchor="w")
 
-        # ── Main card with inputs ────────────────────────────────────────
+        # ── Main card ─────────────────────────────────────────────────────
         card = ctk.CTkFrame(main_container, fg_color="#1a1d23", corner_radius=16, border_width=1, border_color="#2a2d35")
         card.pack(fill="x", padx=30, pady=(15, 0))
 
@@ -131,34 +137,79 @@ class App(ctk.CTk):
         inner.pack(fill="x", padx=24, pady=24)
         inner.columnconfigure(0, weight=1)
 
-        # Game Path Section
-        path_header = ctk.CTkFrame(inner, fg_color="transparent")
-        path_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        
-        ctk.CTkLabel(path_header, text="🎮", font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(path_header, text="GAME PATH",
+        # ── Find Game on Steam Section ─────────────────────────────────────
+        search_header = ctk.CTkFrame(inner, fg_color="transparent")
+        search_header.grid(row=0, column=0, columnspan=2, sticky="ew")
+
+        ctk.CTkLabel(search_header, text="🔍", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8), pady=(0, 2))
+        ctk.CTkLabel(search_header, text="FIND GAME ON STEAM",
                      font=ctk.CTkFont(size=11, weight="bold"),
                      text_color="#8b8d94").pack(side="left")
 
-        addr_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
-        addr_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-        addr_frame.columnconfigure(0, weight=1)
+        search_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
+        search_frame.grid(row=1, column=0, columnspan=2, sticky="ew")
+        search_frame.columnconfigure(0, weight=1)
 
-        self.addr_entry = ctk.CTkEntry(
-            addr_frame,
-            placeholder_text="e.g. Valorant\\VALORANT.exe",
-            height=42, 
+        self.game_entry = ctk.CTkEntry(
+            search_frame,
+            placeholder_text="Enter game name (e.g. Where Winds Meet)",
+            height=42,
             font=ctk.CTkFont(size=13),
             fg_color="#0e1015",
             border_width=0,
             text_color="#ffffff"
         )
+        self.game_entry.grid(row=0, column=0, sticky="ew", padx=(12, 0), pady=1)
+        self.game_entry.bind("<Return>", lambda e: self._search_game())
+
+        self.search_btn = ctk.CTkButton(
+            search_frame,
+            text="Search",
+            width=70,
+            height=32,
+            fg_color="#5865F2",
+            hover_color="#4752c4",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._search_game
+        )
+        self.search_btn.grid(row=0, column=1, padx=(0, 6), pady=5)
+
+        self.search_status = ctk.CTkLabel(
+            inner, text="",
+            text_color="#4a4d55",
+            font=ctk.CTkFont(size=11), anchor="w", wraplength=440
+        )
+        self.search_status.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 2))
+
+        # ── Game Path Section ──────────────────────────────────────────────
+        path_header = ctk.CTkFrame(inner, fg_color="transparent")
+        path_header.grid(row=4, column=0, columnspan=2, sticky="ew")
+
+        ctk.CTkLabel(path_header, text="🎮", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8), pady=(0, 4))
+        ctk.CTkLabel(path_header, text="GAME PATH",
+                     font=ctk.CTkFont(size=11, weight="bold"),
+                     text_color="#8b8d94").pack(side="left")
+
+        addr_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
+        addr_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        addr_frame.columnconfigure(0, weight=1)
+
+        self.addr_entry = ctk.CTkEntry(
+            addr_frame,
+            height=42,
+            font=ctk.CTkFont(size=13),
+            fg_color="#0e1015",
+            border_width=0,
+            text_color="#ffffff",
+            justify="left"
+        )
         self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(12, 0), pady=1)
+        self.addr_entry.configure(justify="left")
 
         browse_btn = ctk.CTkButton(
-            addr_frame, 
-            text="Browse", 
-            width=70, 
+            addr_frame,
+            text="Browse",
+            width=70,
             height=32,
             fg_color="#5865F2",
             hover_color="#4752c4",
@@ -169,22 +220,20 @@ class App(ctk.CTk):
 
         self.addr_entry.bind("<KeyRelease>", lambda e: self._update_addr_preview())
 
-        # Path preview
         self.addr_preview = ctk.CTkLabel(
             inner, text="", text_color="#4a4d55",
-            font=ctk.CTkFont(size=11), anchor="w", wraplength=440
+            font=ctk.CTkFont(size=11), anchor="w", justify="left", wraplength=440
         )
-        self.addr_preview.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 8))
+        self.addr_preview.grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 8))
 
-        # Help link with better styling
         help_frame = ctk.CTkFrame(inner, fg_color="#1e2127", corner_radius=8, height=32)
-        help_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 20))
+        help_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 20))
         help_frame.grid_propagate(False)
-        
+
         reddit_link = ctk.CTkLabel(
             help_frame,
             text="💡 Find game paths on r/DiscordQuests →",
-            text_color="#5865F2", 
+            text_color="#5865F2",
             font=ctk.CTkFont(size=12),
             cursor="hand2"
         )
@@ -193,17 +242,17 @@ class App(ctk.CTk):
         reddit_link.bind("<Enter>", lambda e: reddit_link.configure(text_color="#6d79f3"))
         reddit_link.bind("<Leave>", lambda e: reddit_link.configure(text_color="#5865F2"))
 
-        # Duration Section
+        # ── Duration Section ───────────────────────────────────────────────
         duration_header = ctk.CTkFrame(inner, fg_color="transparent")
-        duration_header.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 8))
-        
-        ctk.CTkLabel(duration_header, text="⏱️", font=ctk.CTkFont(size=16)).pack(side="left", padx=(0, 8))
-        ctk.CTkLabel(duration_header, text="DURATION",
+        duration_header.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        ctk.CTkLabel(duration_header, text="⏱️", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 8), pady=(0, 4))
+        ctk.CTkLabel(duration_header, text="DURATION (MINS)",
                      font=ctk.CTkFont(size=11, weight="bold"),
                      text_color="#8b8d94").pack(side="left")
 
         time_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
-        time_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        time_frame.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(0, 6))
 
         self.time_entry = ctk.CTkEntry(
             time_frame,
@@ -216,22 +265,6 @@ class App(ctk.CTk):
         )
         self.time_entry.pack(fill="x", padx=12, pady=1)
 
-        ctk.CTkLabel(inner,
-                     text="⚡ Quick math: Use expressions like 15*2 for 30 minutes",
-                     text_color="#4a4d55", font=ctk.CTkFont(size=11),
-                     anchor="w").grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 0))
-
-        # ── Progress indicator (initially hidden) ─────────────────────────
-        self.progress_frame = ctk.CTkFrame(main_container, fg_color="#1a1d23", corner_radius=12, height=50, border_width=1, border_color="#2a2d35")
-        
-        self.progress_label = ctk.CTkLabel(
-            self.progress_frame, 
-            text="", 
-            font=ctk.CTkFont(size=14),
-            text_color="#8b8d94"
-        )
-        self.progress_label.pack(expand=True)
-        
         # ── Error label ────────────────────────────────────────────────────
         self.error_label = ctk.CTkLabel(
             main_container, text="", text_color="#ff5555",
@@ -239,22 +272,46 @@ class App(ctk.CTk):
         )
         self.error_label.pack(pady=(6, 0))
 
-        # ── Launch button at bottom ─────────────────────────────────────────
-        button_frame = ctk.CTkFrame(main_container, fg_color="transparent")
-        button_frame.pack(side="bottom", fill="x", pady=(0, 20))
-        
-        self.launch_btn = ctk.CTkButton(
-            button_frame, 
-            text="Start Quest", 
-            width=460, 
-            height=52,
-            font=ctk.CTkFont(size=17, weight="bold"),
-            fg_color="#5865F2",
-            hover_color="#4752c4",
-            corner_radius=12,
-            command=self.launch
-        )
-        self.launch_btn.pack()
+
+    def _search_game(self):
+        if self._is_searching or self._is_running:
+            return
+        query = self.game_entry.get().strip()
+        if not query:
+            self.search_status.configure(text="⚠️ Enter a game name to search", text_color="#faa61a")
+            return
+
+        self._is_searching = True
+        self.search_btn.configure(state="disabled", text="...")
+        self.search_status.configure(text="🔍 Searching Steam...", text_color="#8b8d94")
+        self._set_error("")
+
+        threading.Thread(target=self._search_thread, args=(query,), daemon=True).start()
+
+    def _search_thread(self, query):
+        try:
+            result = search_steam_game(query)
+            if result is None:
+                self.after(0, lambda: self._on_search_result(None, "❌ Game not found on Steam", "#ff5555"))
+            else:
+                name = result['official_name']
+                self.after(0, lambda: self._on_search_result(result, f"✅ Found: {name}", "#43b581"))
+        except Exception as e:
+            err = str(e)
+            self.after(0, lambda: self._on_search_result(None, f"⚠️ Search failed: {err}", "#faa61a"))
+        finally:
+            self.after(0, self._search_reset)
+
+    def _on_search_result(self, result, status_text, status_color):
+        self.search_status.configure(text=status_text, text_color=status_color)
+        if result:
+            self.addr_entry.delete(0, "end")
+            self.addr_entry.insert(0, result['relative_path'])
+            self._update_addr_preview()
+
+    def _search_reset(self):
+        self.search_btn.configure(state="normal", text="Search")
+        self._is_searching = False
 
     def _browse(self):
         base = Path(COMMON_FOLDER)
@@ -291,7 +348,7 @@ class App(ctk.CTk):
     def launch(self):
         if self._is_running:
             return
-            
+
         addr = self.addr_entry.get().strip()
         time_expr = self.time_entry.get().strip() or "15"
 
@@ -310,10 +367,6 @@ class App(ctk.CTk):
         self._set_error("")
         self._is_running = True
         self.launch_btn.configure(state="disabled", text="Initializing...", fg_color="#3a4070")
-        
-        # Show progress frame with animation
-        self.progress_frame.pack(fill="x", padx=30, pady=(10, 0), before=self.error_label)
-        self.progress_label.configure(text="🚀 Starting quest simulation...")
 
         t = threading.Thread(
             target=self._launch_thread,
@@ -343,7 +396,7 @@ class App(ctk.CTk):
                 quest_timer_path = resource_path('quest_timer.exe')
                 if not os.path.exists(quest_timer_path):
                     raise FileNotFoundError(f"quest_timer.exe not found at {quest_timer_path}")
-                
+
                 shutil.copy(quest_timer_path, found_addr)
                 duration_ms = duration_s * 1000
                 self.after(0, lambda: self._start_progress(duration_ms))
@@ -361,7 +414,7 @@ class App(ctk.CTk):
 
         except Exception as e:
             import traceback
-            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            traceback.format_exc()
             self.after(0, lambda: self._finish_error(str(e)))
 
     def _start_progress(self, duration_ms):
@@ -376,35 +429,24 @@ class App(ctk.CTk):
         elapsed_ms = (time.time() - self._start_time) * 1000
         pct = min(elapsed_ms / self._duration_ms, 1.0)
         remaining_s = max(self._duration_ms - elapsed_ms, 0) / 1000
-        
-        # Update progress label with percentage and time
-        progress_text = f"⏱️ Progress: {int(pct * 100)}% - {fmt_time(remaining_s)} remaining"
-        self.progress_label.configure(text=progress_text)
-        
-        # Update button text
+
         if remaining_s > 0:
             self.launch_btn.configure(text=f"⏸ {fmt_time(remaining_s)}")
-        
+
         if pct < 1.0:
             self.after(500, self._tick_progress)
 
     def _finish_success(self):
         self._start_time = None
         self._is_running = False
-        self.progress_label.configure(text="✅ Quest completed successfully!")
-        self.launch_btn.configure(text="Quest Complete!", fg_color="#43b581")
-        
-        # Hide progress frame and reset button after delay
-        self.after(3000, lambda: [
-            self.progress_frame.pack_forget(),
-            self.launch_btn.configure(state="normal", text="Start Quest", fg_color="#5865F2")
-        ])
+        self.launch_btn.configure(text="✅ Quest Complete!", fg_color="#43b581")
+
+        self.after(3000, lambda: self.launch_btn.configure(state="normal", text="Start Quest", fg_color="#5865F2"))
 
     def _finish_error(self, msg):
         self._start_time = None
         self._is_running = False
         self._set_error(f"❌ {msg}")
-        self.progress_frame.pack_forget()
         self.launch_btn.configure(state="normal", text="Start Quest", fg_color="#5865F2")
 
     def _set_error(self, text):
