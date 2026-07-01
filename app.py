@@ -245,7 +245,7 @@ class App(ctk.CTk):
 
         self.time_entry = ctk.CTkEntry(
             time_frame,
-            placeholder_text="15",
+            placeholder_text="minutes",
             height=42,
             font=ctk.CTkFont(size=13),
             fg_color="#0e1015",
@@ -253,6 +253,7 @@ class App(ctk.CTk):
             text_color="#ffffff"
         )
         self.time_entry.pack(fill="x", padx=12, pady=1)
+        self.time_entry.insert(0, "15")
 
         # ── Error label ────────────────────────────────────────────────────
         self.error_label = ctk.CTkLabel(
