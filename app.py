@@ -196,6 +196,7 @@ class App(ctk.CTk):
 
         self.addr_entry = ctk.CTkEntry(
             addr_frame,
+            placeholder_text="Enter game path (e.g. Win64\VALORANT-Win64-Shipping.exe)",
             height=42,
             font=ctk.CTkFont(size=13),
             fg_color="#0e1015",
@@ -203,20 +204,8 @@ class App(ctk.CTk):
             text_color="#ffffff",
             justify="left"
         )
-        self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(12, 0), pady=1)
+        self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(12, 12), pady=1)
         self.addr_entry.configure(justify="left")
-
-        browse_btn = ctk.CTkButton(
-            addr_frame,
-            text="Browse",
-            width=70,
-            height=32,
-            fg_color="#5865F2",
-            hover_color="#4752c4",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._browse
-        )
-        browse_btn.grid(row=0, column=1, padx=(0, 6), pady=5)
 
         self.addr_entry.bind("<KeyRelease>", lambda e: self._update_addr_preview())
 
@@ -350,19 +339,7 @@ class App(ctk.CTk):
             return
 
         addr = self.addr_entry.get().strip()
-        time_expr = self.time_entry.get().strip() or "15"
-
-        if not addr:
-            self._set_error("❌ Please enter a game path")
-            return
-
-        try:
-            duration_min = safe_eval_minutes(time_expr)
-        except ValueError as e:
-            self._set_error(f"❌ {str(e)}")
-            return
-
-        duration_s = int(duration_min * 60) + 20
+        duration_s = int(self.time_entry.get().strip()) * 60
 
         self._set_error("")
         self._is_running = True
