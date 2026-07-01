@@ -89,6 +89,12 @@ class App(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color="#0e1015")
 
+        icon_path = resource_path("icon.ico")
+        try:
+            self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
         self._active_thread = None
         self._start_time = None
         self._duration_ms = None

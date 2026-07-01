@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('dist/quest_timer.exe', '.')]
+datas = [('dist/quest_timer.exe', '.'), ('icon.ico', '.')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('customtkinter')
@@ -30,6 +30,7 @@ exe = EXE(
     a.datas,
     [],
     name='discord_quest_completer',
+    icon='icon.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
