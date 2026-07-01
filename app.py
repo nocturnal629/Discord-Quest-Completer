@@ -89,12 +89,6 @@ class App(ctk.CTk):
         self.resizable(False, False)
         self.configure(fg_color="#0e1015")
 
-        icon_path = resource_path("icon.ico")
-        try:
-            self.iconbitmap(icon_path)
-        except Exception:
-            pass
-
         self._active_thread = None
         self._start_time = None
         self._duration_ms = None
@@ -103,6 +97,14 @@ class App(ctk.CTk):
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(0, self._apply_icon)
+
+    def _apply_icon(self):
+        icon_path = resource_path("icon.ico")
+        try:
+            self.iconbitmap(icon_path)
+        except Exception:
+            pass
 
     def _build_ui(self):
         main_container = ctk.CTkFrame(self, fg_color="#0e1015", corner_radius=0)
