@@ -1,13 +1,16 @@
 import os
 import requests
+from logger import log
 
 
 def search_steam_game(query):
+    log(f"Steam storesearch request: term='{query}'")
     resp = requests.get(
         'https://store.steampowered.com/api/storesearch/',
         params={'term': query, 'l': 'english', 'cc': 'US'},
         timeout=15,
     )
+    log(f"Steam storesearch response: status={resp.status_code}")
     resp.raise_for_status()
     items = resp.json().get('items')
     if not items:
@@ -15,11 +18,14 @@ def search_steam_game(query):
 
     app_id   = items[0]['id']
     official = items[0]['name']
+    log(f"Top result: '{official}' appid={app_id}")
 
+    log(f"Steamcmd info request: appid={app_id}")
     resp2 = requests.get(
         f'https://api.steamcmd.net/v1/info/{app_id}',
         timeout=15,
     )
+    log(f"Steamcmd info response: status={resp2.status_code}")
     resp2.raise_for_status()
     app_data = resp2.json().get('data', {}).get(str(app_id), {})
     config   = app_data.get('config', {})
@@ -27,6 +33,7 @@ def search_steam_game(query):
     install_dir  = config.get('installdir', official)
     exe_rel_path = _pick_windows_exe(config.get('launch', {}))
     relative_path = os.path.join(install_dir, exe_rel_path) if exe_rel_path else install_dir
+    log(f"Resolved relative_path: {relative_path}")
 
     return {
         'official_name': official,

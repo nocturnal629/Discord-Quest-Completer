@@ -3,7 +3,15 @@ from tkinter import filedialog
 from pathlib import Path
 import shutil, os, subprocess, threading, sys, ast, time, webbrowser
 
+try:
+    import psutil
+    _PSUTIL = True
+except ImportError:
+    _PSUTIL = False
+
 from steam_api import search_steam_game
+import logger
+from logger import log, log_exception
 
 COMMON_FOLDER = r'C:\Program Files (x86)\Steam\steamapps\common'
 
@@ -80,6 +88,7 @@ def fmt_time(seconds):
 
 class App(ctk.CTk):
     def __init__(self):
+        log("App started")
         super().__init__()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
@@ -135,7 +144,22 @@ class App(ctk.CTk):
             header_frame, text="Discord Quest Completer",
             font=ctk.CTkFont(size=24, weight="bold"),
             text_color="#ffffff"
-        ).pack(anchor="w")
+        ).pack(side="left", anchor="w")
+
+        self._logs_enabled = True
+        self.logs_btn = ctk.CTkButton(
+            header_frame,
+            text="📋 Logs: ON",
+            width=100,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#2a2d35",
+            hover_color="#3a3d47",
+            text_color="#43b581",
+            corner_radius=8,
+            command=self._toggle_logs,
+        )
+        self.logs_btn.pack(side="right", anchor="e")
 
         # ── Main card ─────────────────────────────────────────────────────
         card = ctk.CTkFrame(main_container, fg_color="#1a1d23", corner_radius=16, border_width=1, border_color="#2a2d35")
@@ -271,6 +295,14 @@ class App(ctk.CTk):
         self.error_label.pack(pady=(6, 0))
 
 
+    def _toggle_logs(self):
+        self._logs_enabled = not self._logs_enabled
+        logger.enabled = self._logs_enabled
+        if self._logs_enabled:
+            self.logs_btn.configure(text="📋 Logs: ON", text_color="#43b581")
+        else:
+            self.logs_btn.configure(text="📋 Logs: OFF", text_color="#4a4d55")
+
     def _search_game(self):
         if self._is_searching or self._is_running:
             return
@@ -287,14 +319,18 @@ class App(ctk.CTk):
         threading.Thread(target=self._search_thread, args=(query,), daemon=True).start()
 
     def _search_thread(self, query):
+        log(f"Searching Steam for: {query}")
         try:
             result = search_steam_game(query)
             if result is None:
+                log(f"Game not found: {query}")
                 self.after(0, lambda: self._on_search_result(None, "❌ Game not found on Steam", "#ff5555"))
             else:
                 name = result['official_name']
+                log(f"Found game: {name} (appid={result['app_id']}) path={result['relative_path']}")
                 self.after(0, lambda: self._on_search_result(result, f"✅ Found: {name}", "#43b581"))
         except Exception as e:
+            log_exception(f"Steam search failed for '{query}': {e}")
             err = str(e)
             self.after(0, lambda: self._on_search_result(None, f"⚠️ Search failed: {err}", "#faa61a"))
         finally:
@@ -348,7 +384,7 @@ class App(ctk.CTk):
             return
 
         addr = self.addr_entry.get().strip()
-        duration_s = int(self.time_entry.get().strip()) * 60
+        duration_s = int(self.time_entry.get().strip()) * 60 + 30
 
         self._set_error("")
         self._is_running = True
@@ -363,45 +399,116 @@ class App(ctk.CTk):
         self._active_thread = t
 
     def _launch_thread(self, addr, duration_s):
+        log(f"Launch requested: addr='{addr}' duration={duration_s}s ({duration_s/60:.1f} mins)")
+        log(f"--- PRE-FLIGHT CHECKS ---")
+
+        # Check Discord is running
+        if _PSUTIL:
+            discord_procs = [p for p in psutil.process_iter(['name']) if 'discord' in (p.info['name'] or '').lower()]
+            if discord_procs:
+                log(f"Discord detected: {[p.info['name'] for p in discord_procs]}")
+            else:
+                log("WARNING: Discord does not appear to be running — quest will NOT progress without Discord open")
+        else:
+            log("psutil not available — skipping Discord process check")
+
         try:
             try:
                 found_addr = resolve_addr(addr)
+                log(f"Resolved path: {found_addr}")
             except ValueError as e:
-                self.after(0, lambda: self._finish_error(str(e)))
+                err_msg = str(e)
+                log_exception(f"Path resolution failed: {err_msg}")
+                self.after(0, lambda: self._finish_error(err_msg))
                 return
+
+            exe_name = os.path.basename(found_addr)
+            log(f"Target exe name (what Discord will see as the process): '{exe_name}'")
+            log(f"NOTE: Discord matches this process name against its game database. If the quest doesn't progress, the exe name may not match Discord's records for this game.")
 
             dir_addr = os.path.dirname(found_addr)
             created_dirs = mkdir_track(dir_addr)
             backup_addr = os.path.join(dir_addr, 'old_game_file.exe')
             is_installed = len(created_dirs) == 0
+            log(f"Game directory exists (pre-installed): {is_installed}")
+            log(f"Game directory: {dir_addr}")
+            if created_dirs:
+                log(f"Had to create directories: {[str(d) for d in created_dirs]}")
 
             if is_installed and os.path.exists(found_addr):
+                log(f"Existing exe found at target path — backing up to: {backup_addr}")
+                existing_size = os.path.getsize(found_addr)
+                log(f"Existing exe size: {existing_size} bytes")
+                if os.path.exists(backup_addr):
+                    log(f"Stale backup already exists at '{backup_addr}' (leftover from interrupted run) — removing it")
+                    os.remove(backup_addr)
                 os.rename(found_addr, backup_addr)
+                log(f"Backup complete")
+            elif is_installed and not os.path.exists(found_addr):
+                log(f"WARNING: Directory exists but no exe found at '{found_addr}' — game may use a launcher or different path")
 
             try:
                 quest_timer_path = resource_path('quest_timer.exe')
+                log(f"quest_timer.exe source path: {quest_timer_path}")
+                log(f"quest_timer.exe exists: {os.path.exists(quest_timer_path)}")
                 if not os.path.exists(quest_timer_path):
                     raise FileNotFoundError(f"quest_timer.exe not found at {quest_timer_path}")
 
+                qt_size = os.path.getsize(quest_timer_path)
+                log(f"quest_timer.exe size: {qt_size} bytes")
+
                 shutil.copy(quest_timer_path, found_addr)
+                copied_size = os.path.getsize(found_addr)
+                log(f"Copied quest_timer.exe to: {found_addr} (size after copy: {copied_size} bytes)")
+                if copied_size != qt_size:
+                    log(f"WARNING: File size mismatch after copy! source={qt_size} dest={copied_size} — copy may be corrupt")
+
                 duration_ms = duration_s * 1000
                 self.after(0, lambda: self._start_progress(duration_ms))
-                subprocess.run([found_addr, str(duration_ms)])
+                log(f"--- LAUNCHING SUBPROCESS ---")
+                log(f"Command: '{found_addr}' arg: {duration_ms}ms")
+                log(f"Expected run time: {duration_s}s ({duration_s/60:.1f} mins)")
+
+                proc_start = time.time()
+                result = subprocess.run(
+                    [found_addr, str(duration_ms)],
+                    capture_output=True,
+                    text=True,
+                )
+                proc_elapsed = time.time() - proc_start
+
+                log(f"--- SUBPROCESS FINISHED ---")
+                log(f"Return code: {result.returncode}")
+                log(f"Actual elapsed time: {proc_elapsed:.1f}s (expected ~{duration_s}s)")
+                if result.stdout.strip():
+                    log(f"Subprocess stdout: {result.stdout.strip()}")
+                if result.stderr.strip():
+                    log(f"Subprocess stderr: {result.stderr.strip()}")
+                if proc_elapsed < duration_s * 0.9:
+                    log(f"WARNING: Process exited {duration_s - proc_elapsed:.1f}s too early — Discord may not have registered enough playtime")
+                if result.returncode != 0:
+                    log(f"WARNING: Non-zero return code {result.returncode} — quest_timer.exe may have failed")
+
             finally:
+                log(f"--- CLEANUP ---")
                 if is_installed:
                     if os.path.exists(found_addr):
                         os.remove(found_addr)
+                        log(f"Removed quest_timer copy: {found_addr}")
                     if os.path.exists(backup_addr):
                         os.rename(backup_addr, found_addr)
+                        log(f"Restored original exe: {found_addr}")
                 elif created_dirs:
                     shutil.rmtree(str(created_dirs[0]))
+                    log(f"Removed created dirs from: {created_dirs[0]}")
 
+            log("Quest run completed — check Discord to confirm quest progress")
             self.after(0, self._finish_success)
 
         except Exception as e:
-            import traceback
-            traceback.format_exc()
-            self.after(0, lambda: self._finish_error(str(e)))
+            err_msg = str(e)
+            log_exception(f"Launch failed: {err_msg}")
+            self.after(0, lambda: self._finish_error(err_msg))
 
     def _start_progress(self, duration_ms):
         self._start_time = time.time()
