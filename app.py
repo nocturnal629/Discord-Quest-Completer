@@ -89,6 +89,11 @@ def fmt_time(seconds):
 class App(ctk.CTk):
     def __init__(self):
         log("App started")
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('DiscordQuestCompleter')
+        except Exception:
+            pass
         super().__init__()
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("dark-blue")
@@ -106,14 +111,33 @@ class App(ctk.CTk):
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.after(0, self._apply_icon)
+        self.after(200, self._apply_icon)
 
     def _apply_icon(self):
         icon_path = resource_path("icon.ico")
+        if not os.path.exists(icon_path):
+            log(f"Icon not found at: {icon_path}")
+            return
+        log(f"Applying icon from: {icon_path}")
         try:
-            self.iconbitmap(icon_path)
-        except Exception:
-            pass
+            import ctypes
+            hwnd = self.winfo_id()
+            LR_LOADFROMFILE = 0x10
+            LR_DEFAULTSIZE = 0x40
+            IMAGE_ICON = 1
+            WM_SETICON = 0x0080
+            hicon = ctypes.windll.user32.LoadImageW(
+                None, icon_path, IMAGE_ICON, 0, 0, LR_LOADFROMFILE | LR_DEFAULTSIZE
+            )
+            if hicon:
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 1, hicon)
+                ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, 0, hicon)
+                log(f"Icon applied via WM_SETICON (hwnd={hwnd})")
+            else:
+                log(f"LoadImageW returned null — falling back to wm_iconbitmap")
+                self.wm_iconbitmap(icon_path)
+        except Exception as e:
+            log(f"Icon apply failed: {e}")
 
     def _build_ui(self):
         main_container = ctk.CTkFrame(self, fg_color="#0e1015", corner_radius=0)
