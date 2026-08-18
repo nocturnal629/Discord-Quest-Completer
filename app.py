@@ -450,6 +450,14 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._finish_error(err_msg))
                 return
 
+            stale_tmp = found_addr + '.tmp'
+            if os.path.exists(stale_tmp):
+                try:
+                    os.remove(stale_tmp)
+                    log(f"Cleaned up stale temp file from previous run: {stale_tmp}")
+                except Exception as e:
+                    log(f"WARNING: Could not clean stale temp file: {e}")
+
             exe_name = os.path.basename(found_addr)
             log(f"Target exe name (what Discord will see as the process): '{exe_name}'")
             log(f"NOTE: Discord matches this process name against its game database. If the quest doesn't progress, the exe name may not match Discord's records for this game.")
@@ -502,9 +510,9 @@ class App(ctk.CTk):
                     [found_addr, str(duration_ms)],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 self._proc.wait()
+                time.sleep(1)
                 returncode = self._proc.returncode
                 self._proc = None
                 proc_elapsed = time.time() - proc_start
