@@ -521,8 +521,15 @@ class App(ctk.CTk):
                 log(f"--- CLEANUP ---")
                 if is_installed:
                     if os.path.exists(found_addr):
-                        os.remove(found_addr)
-                        log(f"Removed quest_timer copy: {found_addr}")
+                        for _attempt in range(10):
+                            try:
+                                os.remove(found_addr)
+                                log(f"Removed quest_timer copy: {found_addr}")
+                                break
+                            except PermissionError:
+                                time.sleep(0.3)
+                        else:
+                            log(f"WARNING: Could not remove quest_timer copy after retries: {found_addr}")
                     if os.path.exists(backup_addr):
                         os.rename(backup_addr, found_addr)
                         log(f"Restored original exe: {found_addr}")
