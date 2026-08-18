@@ -157,6 +157,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=17, weight="bold"),
             fg_color="#5865F2",
             hover_color="#4752c4",
+            text_color="#ffffff",
             corner_radius=12,
             command=self.launch
         )
