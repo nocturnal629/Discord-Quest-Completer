@@ -450,13 +450,17 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._finish_error(err_msg))
                 return
 
-            stale_tmp = found_addr + '.tmp'
-            if os.path.exists(stale_tmp):
-                try:
-                    os.remove(stale_tmp)
-                    log(f"Cleaned up stale temp file from previous run: {stale_tmp}")
-                except Exception as e:
-                    log(f"WARNING: Could not clean stale temp file: {e}")
+            dir_for_stale = os.path.dirname(found_addr)
+            base_for_stale = os.path.basename(found_addr)
+            if os.path.isdir(dir_for_stale):
+                for fname in os.listdir(dir_for_stale):
+                    if fname.startswith(base_for_stale) and fname.endswith('.tmp'):
+                        stale_tmp = os.path.join(dir_for_stale, fname)
+                        try:
+                            os.remove(stale_tmp)
+                            log(f"Cleaned up stale temp file from previous run: {stale_tmp}")
+                        except Exception as e:
+                            log(f"NOTE: Leftover temp file still locked, will retry later: {stale_tmp} ({e})")
 
             exe_name = os.path.basename(found_addr)
             log(f"Target exe name (what Discord will see as the process): '{exe_name}'")
@@ -471,13 +475,15 @@ class App(ctk.CTk):
             if created_dirs:
                 log(f"Had to create directories: {[str(d) for d in created_dirs]}")
 
+            if is_installed and os.path.exists(backup_addr):
+                log(f"Found leftover backup from a previous interrupted run — restoring it first: {backup_addr}")
+                os.replace(backup_addr, found_addr)
+                log(f"Restored original exe from leftover backup: {found_addr}")
+
             if is_installed and os.path.exists(found_addr):
                 log(f"Existing exe found at target path — backing up to: {backup_addr}")
                 existing_size = os.path.getsize(found_addr)
                 log(f"Existing exe size: {existing_size} bytes")
-                if os.path.exists(backup_addr):
-                    log(f"Stale backup already exists at '{backup_addr}' (leftover from interrupted run) — removing it")
-                    os.remove(backup_addr)
                 os.rename(found_addr, backup_addr)
                 log(f"Backup complete")
             elif is_installed and not os.path.exists(found_addr):
@@ -528,28 +534,30 @@ class App(ctk.CTk):
             finally:
                 log(f"--- CLEANUP ---")
                 if is_installed:
-                    tmp_addr = found_addr + '.tmp'
-                    if os.path.exists(found_addr):
-                        try:
-                            if os.path.exists(tmp_addr):
-                                os.remove(tmp_addr)
-                            os.rename(found_addr, tmp_addr)
-                            log(f"Renamed quest_timer copy to .tmp")
-                        except Exception as e:
-                            log(f"WARNING: Could not rename quest_timer copy: {e}")
                     if os.path.exists(backup_addr):
-                        os.rename(backup_addr, found_addr)
-                        log(f"Restored original exe: {found_addr}")
-                    if os.path.exists(tmp_addr):
+                        restored = False
                         for _attempt in range(10):
                             try:
-                                os.remove(tmp_addr)
-                                log(f"Removed temp file")
+                                os.replace(backup_addr, found_addr)
+                                log(f"Restored original exe: {found_addr}")
+                                restored = True
+                                break
+                            except PermissionError:
+                                time.sleep(0.5)
+                        if not restored:
+                            log(f"WARNING: Could not restore original exe yet (file still in use) — "
+                                f"original is safely preserved at: {backup_addr}. It will be restored "
+                                f"automatically on the next launch.")
+                    elif os.path.exists(found_addr):
+                        for _attempt in range(10):
+                            try:
+                                os.remove(found_addr)
+                                log(f"Removed quest_timer copy: {found_addr}")
                                 break
                             except PermissionError:
                                 time.sleep(0.5)
                         else:
-                            log(f"NOTE: Temp file left on disk (safe to delete manually): {tmp_addr}")
+                            log(f"WARNING: Could not remove quest_timer copy after retries: {found_addr}")
                 elif created_dirs:
                     shutil.rmtree(str(created_dirs[0]))
                     log(f"Removed created dirs from: {created_dirs[0]}")
