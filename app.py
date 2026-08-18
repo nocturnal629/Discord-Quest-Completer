@@ -520,19 +520,28 @@ class App(ctk.CTk):
             finally:
                 log(f"--- CLEANUP ---")
                 if is_installed:
+                    tmp_addr = found_addr + '.tmp'
                     if os.path.exists(found_addr):
-                        for _attempt in range(10):
-                            try:
-                                os.remove(found_addr)
-                                log(f"Removed quest_timer copy: {found_addr}")
-                                break
-                            except PermissionError:
-                                time.sleep(0.3)
-                        else:
-                            log(f"WARNING: Could not remove quest_timer copy after retries: {found_addr}")
+                        try:
+                            if os.path.exists(tmp_addr):
+                                os.remove(tmp_addr)
+                            os.rename(found_addr, tmp_addr)
+                            log(f"Renamed quest_timer copy to .tmp")
+                        except Exception as e:
+                            log(f"WARNING: Could not rename quest_timer copy: {e}")
                     if os.path.exists(backup_addr):
                         os.rename(backup_addr, found_addr)
                         log(f"Restored original exe: {found_addr}")
+                    if os.path.exists(tmp_addr):
+                        for _attempt in range(10):
+                            try:
+                                os.remove(tmp_addr)
+                                log(f"Removed temp file")
+                                break
+                            except PermissionError:
+                                time.sleep(0.5)
+                        else:
+                            log(f"NOTE: Temp file left on disk (safe to delete manually): {tmp_addr}")
                 elif created_dirs:
                     shutil.rmtree(str(created_dirs[0]))
                     log(f"Removed created dirs from: {created_dirs[0]}")
