@@ -500,10 +500,11 @@ class App(ctk.CTk):
                 proc_start = time.time()
                 self._proc = subprocess.Popen(
                     [found_addr, str(duration_ms)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
-                stdout_bytes, stderr_bytes = self._proc.communicate()
+                self._proc.wait()
                 returncode = self._proc.returncode
                 self._proc = None
                 proc_elapsed = time.time() - proc_start
@@ -511,12 +512,6 @@ class App(ctk.CTk):
                 log(f"--- SUBPROCESS FINISHED ---")
                 log(f"Return code: {returncode}")
                 log(f"Actual elapsed time: {proc_elapsed:.1f}s (expected ~{duration_s}s)")
-                stdout_str = stdout_bytes.decode(errors='replace').strip()
-                stderr_str = stderr_bytes.decode(errors='replace').strip()
-                if stdout_str:
-                    log(f"Subprocess stdout: {stdout_str}")
-                if stderr_str:
-                    log(f"Subprocess stderr: {stderr_str}")
                 if not self._stop_requested and proc_elapsed < duration_s * 0.9:
                     log(f"WARNING: Process exited {duration_s - proc_elapsed:.1f}s too early — Discord may not have registered enough playtime")
                 if returncode != 0 and not self._stop_requested:
@@ -573,7 +568,10 @@ class App(ctk.CTk):
         self._stop_requested = True
         if self._proc and self._proc.poll() is None:
             log("User requested stop — killing quest_timer process")
-            self._proc.kill()
+            try:
+                self._proc.kill()
+            except Exception as e:
+                log(f"Kill failed: {e}")
         self.launch_btn.configure(
             state="disabled",
             text="Stopping...",
