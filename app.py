@@ -108,6 +108,8 @@ class App(ctk.CTk):
         self._duration_ms = None
         self._is_running = False
         self._is_searching = False
+        self._proc = None
+        self._stop_requested = False
 
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -412,7 +414,8 @@ class App(ctk.CTk):
 
         self._set_error("")
         self._is_running = True
-        self.launch_btn.configure(state="disabled", text="Initializing...", fg_color="#3a4070")
+        self._stop_requested = False
+        self.launch_btn.configure(state="disabled", text="Initializing...", fg_color="#3a4070", text_color="#ffffff")
 
         t = threading.Thread(
             target=self._launch_thread,
@@ -494,24 +497,29 @@ class App(ctk.CTk):
                 log(f"Expected run time: {duration_s}s ({duration_s/60:.1f} mins)")
 
                 proc_start = time.time()
-                result = subprocess.run(
+                self._proc = subprocess.Popen(
                     [found_addr, str(duration_ms)],
-                    capture_output=True,
-                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
+                stdout_bytes, stderr_bytes = self._proc.communicate()
+                returncode = self._proc.returncode
+                self._proc = None
                 proc_elapsed = time.time() - proc_start
 
                 log(f"--- SUBPROCESS FINISHED ---")
-                log(f"Return code: {result.returncode}")
+                log(f"Return code: {returncode}")
                 log(f"Actual elapsed time: {proc_elapsed:.1f}s (expected ~{duration_s}s)")
-                if result.stdout.strip():
-                    log(f"Subprocess stdout: {result.stdout.strip()}")
-                if result.stderr.strip():
-                    log(f"Subprocess stderr: {result.stderr.strip()}")
-                if proc_elapsed < duration_s * 0.9:
+                stdout_str = stdout_bytes.decode(errors='replace').strip()
+                stderr_str = stderr_bytes.decode(errors='replace').strip()
+                if stdout_str:
+                    log(f"Subprocess stdout: {stdout_str}")
+                if stderr_str:
+                    log(f"Subprocess stderr: {stderr_str}")
+                if not self._stop_requested and proc_elapsed < duration_s * 0.9:
                     log(f"WARNING: Process exited {duration_s - proc_elapsed:.1f}s too early — Discord may not have registered enough playtime")
-                if result.returncode != 0:
-                    log(f"WARNING: Non-zero return code {result.returncode} — quest_timer.exe may have failed")
+                if returncode != 0 and not self._stop_requested:
+                    log(f"WARNING: Non-zero return code {returncode} — quest_timer.exe may have failed")
 
             finally:
                 log(f"--- CLEANUP ---")
@@ -537,7 +545,14 @@ class App(ctk.CTk):
     def _start_progress(self, duration_ms):
         self._start_time = time.time()
         self._duration_ms = duration_ms
-        self.launch_btn.configure(text="Quest Running", fg_color="#43b581")
+        self.launch_btn.configure(
+            state="normal",
+            text="⏹ Stop Quest",
+            fg_color="#e74c3c",
+            hover_color="#c0392b",
+            text_color="#ffffff",
+            command=self._stop_quest,
+        )
         self._tick_progress()
 
     def _tick_progress(self):
@@ -548,23 +563,65 @@ class App(ctk.CTk):
         remaining_s = max(self._duration_ms - elapsed_ms, 0) / 1000
 
         if remaining_s > 0:
-            self.launch_btn.configure(text=f"⏸ {fmt_time(remaining_s)}")
+            self.launch_btn.configure(text=f"⏹ Stop — {fmt_time(remaining_s)}", text_color="#ffffff")
 
         if pct < 1.0:
             self.after(500, self._tick_progress)
 
+    def _stop_quest(self):
+        self._stop_requested = True
+        if self._proc and self._proc.poll() is None:
+            log("User requested stop — killing quest_timer process")
+            self._proc.kill()
+        self.launch_btn.configure(
+            state="disabled",
+            text="Stopping...",
+            fg_color="#7f8c8d",
+            text_color="#ffffff",
+        )
+
     def _finish_success(self):
         self._start_time = None
         self._is_running = False
-        self.launch_btn.configure(text="✅ Quest Complete!", fg_color="#43b581")
-
-        self.after(3000, lambda: self.launch_btn.configure(state="normal", text="Start Quest", fg_color="#5865F2"))
+        if self._stop_requested:
+            self.launch_btn.configure(
+                state="normal",
+                text="⛔ Quest Stopped",
+                fg_color="#7f8c8d",
+                hover_color="#6c7a7d",
+                text_color="#ffffff",
+                command=self.launch,
+            )
+        else:
+            self.launch_btn.configure(
+                state="normal",
+                text="✅ Quest Complete!",
+                fg_color="#43b581",
+                hover_color="#369166",
+                text_color="#ffffff",
+                command=self.launch,
+            )
+        self.after(3000, lambda: self.launch_btn.configure(
+            state="normal",
+            text="Start Quest",
+            fg_color="#5865F2",
+            hover_color="#4752c4",
+            text_color="#ffffff",
+            command=self.launch,
+        ))
 
     def _finish_error(self, msg):
         self._start_time = None
         self._is_running = False
         self._set_error(f"❌ {msg}")
-        self.launch_btn.configure(state="normal", text="Start Quest", fg_color="#5865F2")
+        self.launch_btn.configure(
+            state="normal",
+            text="Start Quest",
+            fg_color="#5865F2",
+            hover_color="#4752c4",
+            text_color="#ffffff",
+            command=self.launch,
+        )
 
     def _set_error(self, text):
         self.error_label.configure(text=text)
