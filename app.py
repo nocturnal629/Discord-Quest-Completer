@@ -99,7 +99,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("Discord Quest Completer")
-        self.geometry("520x580")
+        self.geometry("520x530")
         self.resizable(False, False)
         self.configure(fg_color="#0e1015")
 
@@ -165,8 +165,8 @@ class App(ctk.CTk):
         header_frame.pack(fill="x", padx=30, pady=(20, 0))
 
         ctk.CTkLabel(
-            header_frame, text="Discord Quest Completer",
-            font=ctk.CTkFont(size=24, weight="bold"),
+            header_frame, text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#ffffff"
         ).pack(side="left", anchor="w")
 
@@ -190,7 +190,7 @@ class App(ctk.CTk):
         card.pack(fill="x", padx=30, pady=(15, 0))
 
         inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="x", padx=24, pady=24)
+        inner.pack(fill="x", padx=24, pady=(24, 12))
         inner.columnconfigure(0, weight=1)
 
         # ── Find Game on Steam Section ─────────────────────────────────────
@@ -247,7 +247,7 @@ class App(ctk.CTk):
                      text_color="#8b8d94").pack(side="left")
 
         addr_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
-        addr_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        addr_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 10))
         addr_frame.columnconfigure(0, weight=1)
 
         self.addr_entry = ctk.CTkEntry(
@@ -263,16 +263,9 @@ class App(ctk.CTk):
         self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(12, 12), pady=1)
         self.addr_entry.configure(justify="left")
 
-        self.addr_entry.bind("<KeyRelease>", lambda e: self._update_addr_preview())
-
-        self.addr_preview = ctk.CTkLabel(
-            inner, text="", text_color="#4a4d55",
-            font=ctk.CTkFont(size=11), anchor="w", justify="left", wraplength=440
-        )
-        self.addr_preview.grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 8))
 
         help_frame = ctk.CTkFrame(inner, fg_color="#1e2127", corner_radius=8, height=32)
-        help_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 20))
+        help_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 14))
         help_frame.grid_propagate(False)
 
         reddit_link = ctk.CTkLabel(
@@ -282,7 +275,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12),
             cursor="hand2"
         )
-        reddit_link.pack(anchor="center", pady=6)
+        reddit_link.pack(anchor="center", pady=4)
         reddit_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.reddit.com/r/DiscordQuests/"))
         reddit_link.bind("<Enter>", lambda e: reddit_link.configure(text_color="#6d79f3"))
         reddit_link.bind("<Leave>", lambda e: reddit_link.configure(text_color="#5865F2"))
@@ -365,7 +358,6 @@ class App(ctk.CTk):
         if result:
             self.addr_entry.delete(0, "end")
             self.addr_entry.insert(0, result['relative_path'])
-            self._update_addr_preview()
 
     def _search_reset(self):
         self.search_btn.configure(state="normal", text="Search")
@@ -390,18 +382,7 @@ class App(ctk.CTk):
             self.addr_entry.delete(0, "end")
             self.addr_entry.insert(0, path)
         self._set_error("")
-        self._update_addr_preview()
 
-    def _update_addr_preview(self):
-        addr = self.addr_entry.get().strip()
-        if not addr:
-            self.addr_preview.configure(text="")
-            return
-        try:
-            resolved = resolve_addr(addr)
-            self.addr_preview.configure(text=f"📁 {resolved}", text_color="#43b581")
-        except Exception:
-            self.addr_preview.configure(text="⚠️ Invalid path", text_color="#faa61a")
 
     def launch(self):
         if self._is_running:
