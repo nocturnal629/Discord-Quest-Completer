@@ -165,7 +165,7 @@ class App(ctk.CTk):
         header_frame.pack(fill="x", padx=30, pady=(20, 0))
 
         ctk.CTkLabel(
-            header_frame, text="Discord Quest Completer",
+            header_frame, text="By nocturnal625",
             font=ctk.CTkFont(size=24, weight="bold"),
             text_color="#ffffff"
         ).pack(side="left", anchor="w")
@@ -247,7 +247,7 @@ class App(ctk.CTk):
                      text_color="#8b8d94").pack(side="left")
 
         addr_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
-        addr_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+        addr_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 0))
         addr_frame.columnconfigure(0, weight=1)
 
         self.addr_entry = ctk.CTkEntry(
@@ -270,9 +270,10 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=11), anchor="w", justify="left", wraplength=440
         )
         self.addr_preview.grid(row=6, column=0, columnspan=2, sticky="w", pady=(2, 8))
+        self.addr_preview.grid_remove()
 
         help_frame = ctk.CTkFrame(inner, fg_color="#1e2127", corner_radius=8, height=32)
-        help_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(0, 20))
+        help_frame.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(4, 20))
         help_frame.grid_propagate(False)
 
         reddit_link = ctk.CTkLabel(
@@ -396,12 +397,14 @@ class App(ctk.CTk):
         addr = self.addr_entry.get().strip()
         if not addr:
             self.addr_preview.configure(text="")
+            self.addr_preview.grid_remove()
             return
         try:
             resolved = resolve_addr(addr)
             self.addr_preview.configure(text=f"📁 {resolved}", text_color="#43b581")
         except Exception:
             self.addr_preview.configure(text="⚠️ Invalid path", text_color="#faa61a")
+        self.addr_preview.grid()
 
     def launch(self):
         if self._is_running:
