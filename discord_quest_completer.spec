@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('dist/quest_timer.exe', '.'), ('icon.ico', '.')]
+datas = [('dist/quest_timer.exe', '.'), ('icon.ico', '.'), ('icon_original.png', '.')]
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('customtkinter')
