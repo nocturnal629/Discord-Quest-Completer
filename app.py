@@ -113,7 +113,7 @@ class App(ctk.CTk):
         ctk.set_default_color_theme("dark-blue")
 
         self.title("Discord Quest Completer")
-        self.geometry("520x430")
+        self.geometry("520x360")
         self.resizable(False, False)
         self.configure(fg_color="#0e1015")
 
@@ -196,36 +196,25 @@ class App(ctk.CTk):
         tip_icon.pack(side="left", padx=(8, 0), pady=(0, 2))
         Tooltip(
             tip_icon,
-            "Enter one game path per line to launch multiple .exe files at once.\n\n"
+            "Enter the game's .exe path, relative to your Steam common folder.\n\n"
             "Example:\n"
-            "Win64\\VALORANT-Win64-Shipping.exe\n"
-            "League of Legends\\LeagueClient.exe\n\n"
-            "Each line is treated as a separate game and runs at the same time.",
+            "Win64\\VALORANT-Win64-Shipping.exe",
         )
 
         addr_frame = ctk.CTkFrame(inner, fg_color="#0e1015", corner_radius=8, border_width=1, border_color="#2a2d35")
         addr_frame.grid(row=1, column=0, sticky="ew", pady=(8, 8))
         addr_frame.columnconfigure(0, weight=1)
 
-        self.addr_box = ctk.CTkTextbox(
+        self.addr_entry = ctk.CTkEntry(
             addr_frame,
-            height=110,
+            height=40,
             font=ctk.CTkFont(size=13),
             fg_color="#0e1015",
             border_width=0,
             text_color="#ffffff",
-            wrap="none",
-            activate_scrollbars=True,
+            placeholder_text="Win64\\VALORANT-Win64-Shipping.exe",
         )
-        self.addr_box.grid(row=0, column=0, sticky="ew", padx=(8, 8), pady=6)
-        self._placeholder = (
-            "One game path per line, e.g.\n"
-            "Win64\\VALORANT-Win64-Shipping.exe\n"
-            "League of Legends\\LeagueClient.exe"
-        )
-        self._show_placeholder()
-        self.addr_box.bind("<FocusIn>", self._clear_placeholder)
-        self.addr_box.bind("<FocusOut>", self._restore_placeholder)
+        self.addr_entry.grid(row=0, column=0, sticky="ew", padx=(8, 8), pady=6)
 
         # ── Help link ──────────────────────────────────────────────────────
         help_frame = ctk.CTkFrame(inner, fg_color="#1e2127", corner_radius=8, height=32)
@@ -240,7 +229,7 @@ class App(ctk.CTk):
             cursor="hand2"
         )
         reddit_link.pack(anchor="center", pady=6)
-        reddit_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.reddit.com/r/DiscordQuests/"))
+        reddit_link.bind("<Button-1>", lambda e: webbrowser.open("https://www.reddit.com/r/DiscordQuests/wiki/game-index/"))
         reddit_link.bind("<Enter>", lambda e: reddit_link.configure(text_color="#6d79f3"))
         reddit_link.bind("<Leave>", lambda e: reddit_link.configure(text_color="#5865F2"))
 
@@ -267,28 +256,8 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=12), wraplength=460
         )
 
-    # ── Placeholder handling for the multi-line textbox ────────────────────
-    def _show_placeholder(self):
-        self._placeholder_active = True
-        self.addr_box.delete("1.0", "end")
-        self.addr_box.insert("1.0", self._placeholder)
-        self.addr_box.configure(text_color="#4a4d55")
-
-    def _clear_placeholder(self, _event=None):
-        if getattr(self, "_placeholder_active", False):
-            self._placeholder_active = False
-            self.addr_box.delete("1.0", "end")
-            self.addr_box.configure(text_color="#ffffff")
-
-    def _restore_placeholder(self, _event=None):
-        if not self.addr_box.get("1.0", "end").strip():
-            self._show_placeholder()
-
-    def _get_addrs(self):
-        if getattr(self, "_placeholder_active", False):
-            return []
-        raw = self.addr_box.get("1.0", "end")
-        return [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    def _get_addr(self):
+        return self.addr_entry.get().strip()
 
     def _toggle_logs(self):
         self._logs_enabled = not self._logs_enabled
@@ -302,9 +271,9 @@ class App(ctk.CTk):
         if self._is_running:
             return
 
-        addrs = self._get_addrs()
-        if not addrs:
-            self._set_error("❌ Enter at least one game path")
+        addr = self._get_addr()
+        if not addr:
+            self._set_error("❌ Enter a game path")
             return
 
         duration_s = DURATION_MINUTES * 60 + 30
@@ -315,7 +284,7 @@ class App(ctk.CTk):
 
         t = threading.Thread(
             target=self._launch_thread,
-            args=(addrs, duration_s),
+            args=([addr], duration_s),
             daemon=True,
         )
         t.start()
